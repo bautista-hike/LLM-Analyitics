@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenAI } from '@google/genai'
+import { supabase } from '@/lib/supabase'
 import type {
   BrandContext,
   AuditConfig,
@@ -486,6 +487,51 @@ export async function POST(request: NextRequest) {
       completedAt: new Date(),
       status: 'completed',
     }
+
+    // ── Persist to Supabase ──────────────────────────────────────────────────
+    try {
+      // 1. Insert the parent audit row
+      const { error: auditError } = await supabase.from('audits').insert({
+        id: auditResult.id,
+        brand_name: brandContext.companyName,
+        brand_context: brandContext as unknown as Record<string, unknown>,
+        audit_config: auditConfig as unknown as Record<string, unknown>,
+        overall_metrics: auditResult.overallMetrics as unknown as Record<string, unknown>,
+        status: 'completed',
+        created_at: auditResult.createdAt.toISOString(),
+        completed_at: auditResult.completedAt?.toISOString() ?? null,
+      })
+      if (auditError) throw auditError
+
+      // 2. Insert each prompt result as a child row
+      const resultRows = analysisResults.map((r) => ({
+        id: r.id,
+        audit_id: auditResult.id,
+        prompt_label: (r as any).promptLabel ?? null,
+        prompt_type: (r as any).promptType ?? null,
+        perception_score: r.perceptionScore,
+        sentiment: r.sentiment,
+        response: r.response as unknown as Record<string, unknown>,
+        mentions: r.mentions as unknown,
+        ranking: r.ranking ?? null,
+        source_compliance: r.sourceCompliance as unknown,
+        competitor_comparison: r.competitorComparison as unknown,
+        key_concepts: r.keyConcepts,
+        sentiment_reasoning: (r as any).sentimentReasoning ?? null,
+        score_reasoning: (r as any).scoreReasoning ?? null,
+        mention_count: (r as any).mentionCount ?? r.mentions.length,
+        analyzed_at: (r.analyzedAt instanceof Date ? r.analyzedAt : new Date()).toISOString(),
+      }))
+
+      const { error: resultsError } = await supabase.from('audit_results').insert(resultRows)
+      if (resultsError) throw resultsError
+
+      console.log(`✅ Audit ${auditResult.id} saved to Supabase`)
+    } catch (dbErr) {
+      // DB error is non-fatal — audit result still returned to client
+      console.error('Supabase save error (non-fatal):', dbErr instanceof Error ? dbErr.message : dbErr)
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     return NextResponse.json({ success: true, data: auditResult })
   } catch (error) {

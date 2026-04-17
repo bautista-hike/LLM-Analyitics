@@ -368,12 +368,42 @@ export default function DashboardPage() {
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null)
   const [history, setHistory] = useState<AuditResult[]>([])
   const [historyIdx, setHistoryIdx] = useState(0)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const h = JSON.parse(localStorage.getItem("auditHistory") || "[]") as AuditResult[]
-    setHistory(h)
-    if (h.length > 0) setAuditResult(h[0])
+    async function loadHistory() {
+      try {
+        // Try Supabase first
+        const res = await fetch('/api/audits')
+        const json = await res.json()
+        if (json.success && json.data.length > 0) {
+          setHistory(json.data)
+          setAuditResult(json.data[0])
+          // Sync to localStorage as cache
+          localStorage.setItem('auditHistory', JSON.stringify(json.data))
+          return
+        }
+      } catch {
+        // Supabase unavailable — fall back to localStorage
+      }
+      // Fallback: localStorage
+      const cached = JSON.parse(localStorage.getItem('auditHistory') || '[]') as AuditResult[]
+      setHistory(cached)
+      if (cached.length > 0) setAuditResult(cached[0])
+    }
+    loadHistory().finally(() => setLoading(false))
   }, [])
+
+  if (loading) {
+    return (
+      <SidebarLayout title="Dashboard" description="Brand perception analysis">
+        <div className="flex h-[60vh] flex-col items-center justify-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading audit history...</p>
+        </div>
+      </SidebarLayout>
+    )
+  }
 
   if (!auditResult) {
     return (
