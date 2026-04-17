@@ -140,67 +140,109 @@ function buildAuditPrompts(
 ): Array<{ question: string; label: string; type: string }> {
   const prompts: Array<{ question: string; label: string; type: string }> = []
 
+  const depth: string = (config as any).depth ?? 'standard'
+  const useCases: string[] = (config as any).useCases ?? []
+
   const competitorList =
     config.competitors?.length > 0
       ? config.competitors.join(', ')
       : 'its main competitors in the market'
 
-  const hasCompetitors = config.competitors?.length > 0
+  const hasCompetitors = (config.competitors?.length ?? 0) > 0
 
-  // ── INFORMATIVE ──────────────────────────────────────────────────────────
+  // ── INFORMATIVE ────────────────────────────────────────────────────────────
   if (!config.promptTypes || config.promptTypes.includes('informative')) {
+    // Always included
     prompts.push({
       question: `What is ${brand.companyName} and what does it do in the ${brand.industry} industry? Provide a comprehensive overview of its products, services, value proposition, and market position in ${brand.region}.`,
       label: `What is ${brand.companyName}?`,
       type: 'informative',
     })
-    prompts.push({
-      question: `Describe ${brand.companyName}'s reputation and track record in the ${brand.industry} space in ${brand.region}. What are they most recognized for? What do customers and industry analysts say about them?`,
-      label: `${brand.companyName} reputation & track record`,
-      type: 'informative',
-    })
-    prompts.push({
-      question: `Who are the key players and market leaders in the ${brand.industry} sector in ${brand.region}? Where does ${brand.companyName} stand among them? Is it well known in this space?`,
-      label: `Market leadership in ${brand.industry}`,
-      type: 'informative',
-    })
+    // Standard+
+    if (depth !== 'quick') {
+      prompts.push({
+        question: `Describe ${brand.companyName}'s reputation and track record in the ${brand.industry} space in ${brand.region}. What are they most recognized for? What do customers and industry analysts say about them?`,
+        label: `${brand.companyName} reputation & track record`,
+        type: 'informative',
+      })
+    }
+    // Deep only
+    if (depth === 'deep') {
+      prompts.push({
+        question: `Who are the key players and market leaders in the ${brand.industry} sector in ${brand.region}? Where does ${brand.companyName} stand among them? Is it well known in this space?`,
+        label: `Market leadership in ${brand.industry}`,
+        type: 'informative',
+      })
+    }
   }
 
-  // ── COMPARATIVE ───────────────────────────────────────────────────────────
+  // ── COMPARATIVE ────────────────────────────────────────────────────────────
   if (!config.promptTypes || config.promptTypes.includes('comparative')) {
+    // Always — direct comparison
     prompts.push({
       question: `Compare ${brand.companyName} with ${competitorList} in the ${brand.industry} market in ${brand.region}. Cover: key features, pricing, ease of use, compliance capabilities, customer support, and market presence. Who is best suited for which use case?`,
       label: `${brand.companyName} vs ${config.competitors?.slice(0, 2).join(' & ') ?? 'competitors'}`,
       type: 'comparative',
     })
-    if (hasCompetitors) {
+    // Standard+
+    if (hasCompetitors && depth !== 'quick') {
       prompts.push({
         question: `What are the main strengths and weaknesses of ${brand.companyName} compared to ${competitorList}? In what scenarios would a company choose ${brand.companyName} over its competitors, and vice versa?`,
         label: `Strengths & weaknesses vs competition`,
         type: 'comparative',
       })
     }
+    // Deep only — detailed per-competitor
+    if (hasCompetitors && depth === 'deep') {
+      prompts.push({
+        question: `Focusing specifically on regulatory compliance and ease of implementation: how does ${brand.companyName} compare to ${competitorList} in ${brand.region}? Who has the edge and why?`,
+        label: `Compliance & implementation — ${brand.companyName} vs market`,
+        type: 'comparative',
+      })
+    }
   }
 
-  // ── RECOMMENDATION ────────────────────────────────────────────────────────
+  // ── RECOMMENDATION ─────────────────────────────────────────────────────────
   if (!config.promptTypes || config.promptTypes.includes('recommendation')) {
+    // Always — ranked recommendation
     prompts.push({
       question: `A company in ${brand.region} needs a ${brand.industry} solution. Considering options like ${brand.companyName}${hasCompetitors ? `, ${competitorList}` : ''} and any other relevant providers, which would you recommend and why? Please provide a ranked list with justification.`,
       label: `Best ${brand.industry} solution — ranked`,
       type: 'recommendation',
     })
+    // Use-case specific recommendations (standard: up to 2, deep: up to 3)
+    const maxUseCasePrompts = depth === 'quick' ? 1 : depth === 'standard' ? 2 : 3
+    const useCasesToUse = useCases.slice(0, maxUseCasePrompts)
+    for (const useCase of useCasesToUse) {
+      prompts.push({
+        question: `A ${useCase} is looking for a ${brand.industry} solution in ${brand.region}. Would you recommend ${brand.companyName}? How does it compare to ${hasCompetitors ? competitorList : 'alternatives on the market'}? What should they consider before choosing?`,
+        label: `Recommendation for ${useCase}`,
+        type: 'recommendation',
+      })
+    }
   }
 
-  // ── OPINION ───────────────────────────────────────────────────────────────
+  // ── OPINION ────────────────────────────────────────────────────────────────
   if (!config.promptTypes || config.promptTypes.includes('opinion')) {
-    prompts.push({
-      question: `What is the general market sentiment around ${brand.companyName}? What are its most praised features according to users and experts? What are the most commonly mentioned pain points or limitations?`,
-      label: `Market sentiment on ${brand.companyName}`,
-      type: 'opinion',
-    })
+    // Standard+
+    if (depth !== 'quick') {
+      prompts.push({
+        question: `What is the general market sentiment around ${brand.companyName}? What are its most praised features according to users and experts? What are the most commonly mentioned pain points or limitations?`,
+        label: `Market sentiment on ${brand.companyName}`,
+        type: 'opinion',
+      })
+    }
+    // Deep only
+    if (depth === 'deep') {
+      prompts.push({
+        question: `If someone asked you 'Is ${brand.companyName} trustworthy and reliable?', what would you say? What evidence exists — customer testimonials, case studies, certifications, or industry recognition — that supports or contradicts this?`,
+        label: `${brand.companyName} trustworthiness & reliability`,
+        type: 'opinion',
+      })
+    }
   }
 
-  // ── CUSTOM ────────────────────────────────────────────────────────────────
+  // ── CUSTOM ─────────────────────────────────────────────────────────────────
   if (config.customPrompts?.length) {
     for (const custom of config.customPrompts) {
       const text = custom.text
@@ -208,7 +250,6 @@ function buildAuditPrompts(
         .replace(/{industry}/gi, brand.industry)
         .replace(/{region}/gi, brand.region)
         .replace(/{competitors}/gi, competitorList)
-
       prompts.push({
         question: text,
         label: `Custom: ${text.slice(0, 50)}${text.length > 50 ? '…' : ''}`,
